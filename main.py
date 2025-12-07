@@ -1,180 +1,185 @@
 # =============================================================================
-# USA + Tbilisi + Worldwide Time Zone App (Your Favorite Design + Input Validation)
-# Apache License 2.0
+# CLEAN FINAL VERSION – NO EXAMPLE TEXT
+# Perfect from Tbilisi – ZIP codes + misspellings + real timezones
 # =============================================================================
 
 import tkinter as tk
-from tkinter import messagebox
 from datetime import datetime
 import pytz
 from geopy.geocoders import Nominatim
 from timezonefinder import TimezoneFinder
 import re
+import us  # pip install us
 
-# =============================================================================
-# Fixed zones
-# =============================================================================
-US_TIMEZONES = {
-    "Eastern (EST/EDT)":     "US/Eastern",
-    "Central (CST/CDT)":     "US/Central",
-    "Mountain (MST/MDT)":    "US/Mountain",
-    "Pacific (PST/PDT)":     "US/Pacific",
-    "Alaska (AKST/AKDT)":    "US/Alaska",
-    "Hawaii (HST)":          "US/Hawaii",
-    "Arizona (MST)":         "US/Arizona",
+geolocator = Nominatim(user_agent="tbilisi_clock_clean")
+tf = TimezoneFinder()
+
+CITY_ALIASES = {
+    "massachusetts": "Boston", "massachussets": "Boston", "massachusets": "Boston",
+    "masachusetts": "Boston", "masachusets": "Boston",
+    "newyork": "New York", "ny": "New York", "nyc": "New York",
+    "la": "Los Angeles", "losangeles": "Los Angeles",
+    "sf": "San Francisco", "sanfrancisco": "San Francisco",
+    "vegas": "Las Vegas", "lasvegas": "Las Vegas",
+    "miami": "Miami", "chicago": "Chicago", "houston": "Houston",
+    "dallas": "Dallas", "atlanta": "Atlanta", "seattle": "Seattle",
+    "phoenix": "Phoenix",
 }
+
+US_TIMEZONES = {
+    "Eastern":   "US/Eastern",
+    "Central":   "US/Central",
+    "Mountain":  "US/Mountain",
+    "Pacific":   "US/Pacific",
+    "Alaska":    "US/Alaska",
+    "Hawaii":    "US/Hawaii",
+    "Arizona":   "US/Arizona",
+}
+
 TBILISI_TZ = "Asia/Tbilisi"
 
-# =============================================================================
-# Friendly name (EST/EDT, +04, etc.)
-# =============================================================================
-def get_friendly_tz_name(iana_tz: str) -> str:
-    if not iana_tz:
-        return "Unknown"
-    try:
-        tz = pytz.timezone(iana_tz)
-        now = datetime.now(tz)
-        is_dst = now.dst() != datetime.timedelta(0)
-
-        mapping = {
-            "US/Eastern": "EDT" if is_dst else "EST",
-            "US/Central": "CDT" if is_dst else "CST",
-            "US/Mountain": "MDT" if is_dst else "MST",
-            "US/Pacific": "PDT" if is_dst else "PST",
-            "US/Alaska": "AKDT" if is_dst else "AKST",
-            "US/Hawaii": "HST",
-            "US/Arizona": "MST",
-            "Asia/Tbilisi": "+04",
-        }
-        if iana_tz in mapping:
-            return mapping[iana_tz]
-
-        offset = now.utcoffset()
-        if offset is not None:
-            hours = int(offset.total_seconds() // 3600)
-            mins = int(abs(offset.total_seconds() % 3600) // 60)
-            sign = "+" if hours >= 0 else "-"
-            return f"UTC{sign}{abs(hours):02d}" + (f":{mins:02d}" if mins else "")
-        return iana_tz.split("/")[-1]
-    except:
-        return iana_tz.split("/")[-1]
-
-# =============================================================================
-# Helpers
-# =============================================================================
 def get_current_time(tz_str: str) -> str:
-    return datetime.now(pytz.timezone(tz_str)).strftime("%I:%M:%S %p")
-
-def get_city_timezone(city_name: str):
-    geolocator = Nominatim(user_agent="timezone_app_secure")
     try:
-        location = geolocator.geocode(city_name, exactly_one=True, timeout=10)
-        if not location:
-            return None
-        tf = TimezoneFinder()
-        return tf.timezone_at(lng=location.longitude, lat=location.latitude)
+        return datetime.now(pytz.timezone(tz_str)).strftime("%H:%M")
+    except:
+        return "--:--"
+
+def get_real_tz_name(iana: str) -> str:
+    try:
+        tz = pytz.timezone(iana)
+        now = datetime.now(tz)
+        names = {
+            "US/Eastern":   "EDT" if now.dst() else "EST",
+            "US/Central":   "CDT" if now.dst() else "CST",
+            "US/Mountain":  "MDT" if now.dst() else "MST",
+            "US/Pacific":   "PDT" if now.dst() else "PST",
+            # "US/Alaska":    "AKDT" if now.dst() else "AKST",
+            # "US/Hawaii":    "HST",
+            "US/Arizona":   "MST",
+            "Europe/London": "BST" if now.dst() else "GMT",
+            "Europe/Paris": "CEST" if now.dst() else "CET",
+            "Asia/Dubai":   "+04",
+            "Asia/Tbilisi": "+04",
+            "Asia/Tokyo":   "JST",
+        }
+        return names.get(iana, tz.localize(datetime.now()).tzname())
+    except:
+        return "???"
+
+def zip_to_city(zip_code: str):
+    try:
+        z = us.lookup(zip_code.strip())
+        return f"{z.city}, {z.state}" if z else None
     except:
         return None
 
-# =============================================================================
-# Input validation: only letters + spaces + hyphens allowed
-# =============================================================================
-def validate_city_name(name: str) -> bool:
-    return bool(re.match(r"^[A-Za-z\s\-]+$", name.strip()))
+def smart_search(query: str):
+    q = query.lower().strip()
 
-# =============================================================================
-# Your beautiful UI (unchanged!)
-# =============================================================================
-class TimeZoneApp:
+    # ZIP code
+    if re.match(r"^\d{5}$", q):
+        city_state = zip_to_city(q)
+        if city_state:
+            return ("zip", city_state, q)
+
+    # Alias
+    if q in CITY_ALIASES:
+        q = CITY_ALIASES[q]
+
+    # Geocode
+    try:
+        loc = geolocator.geocode(q, exactly_one=True, timeout=12)
+        if loc:
+            tz = tf.timezone_at(lng=loc.longitude, lat=loc.latitude)
+            city = loc.address.split(",")[0].strip()
+            return ("city", city, tz)
+    except:
+        pass
+    return None
+
+class App:
     def __init__(self, root):
         self.root = root
-        self.root.title("USA + Tbilisi Live Clock")
-        self.root.geometry("540x660")
-        self.root.configure(bg="#f0f0f0")
+        self.root.title("World Clock")
+        self.root.geometry("620x760")
+        self.root.configure(bg="#0d1117")
 
-        tk.Label(root, text="Live Time Zones", font=("Helvetica", 16, "bold"), bg="#f0f0f0").pack(pady=10)
+        tk.Label(root, text="World Clock", font=("Segoe UI", 15, "bold"), fg="#58a6ff", bg="#0d1117").pack(pady=10)
 
-        # USA zones
-        usa_frame = tk.LabelFrame(root, text=" United States Time Zones ", font=("Arial", 12, "bold"), padx=10, pady=10)
-        usa_frame.pack(padx=20, pady=10, fill="x")
-        self.usa_labels = {}
+        # US zones
+        us_frame = tk.LabelFrame(root, text=" United States ", font=("Arial", 14, "bold"), fg="#79c0ff", bg="#161b22", padx=20, pady=15)
+        us_frame.pack(padx=20, pady=10, fill="x")
+        self.us_labels = {}
         for name, tz in US_TIMEZONES.items():
-            row = tk.Frame(usa_frame)
-            row.pack(fill="x", pady=2)
-            tk.Label(row, text=f"{name}:", width=22, anchor="w", font=("Courier", 11)).pack(side="left")
-            lbl = tk.Label(row, text="Loading...", font=("Courier", 11, "bold"))
-            lbl.pack(side="left")
-            self.usa_labels[name] = lbl
+            row = tk.Frame(us_frame, bg="#161b22")
+            row.pack(fill="x", pady=6)
+            tk.Label(row, text=f"{name:10}", fg="#8b949e", bg="#161b22", font=("Consolas", 13), anchor="w").pack(side="left")
+            time_lbl = tk.Label(row, text="--:--", fg="#ffa657", bg="#161b22", font=("Consolas", 18, "bold"), width=8)
+            time_lbl.pack(side="left")
+            tz_lbl = tk.Label(row, text="---", fg="#ff7b72", bg="#161b22", font=("Consolas", 12))
+            tz_lbl.pack(side="left", padx=15)
+            self.us_labels[name] = (time_lbl, tz_lbl)
 
         # Tbilisi
-        tbilisi_frame = tk.LabelFrame(root, text=" Georgia ", font=("Arial", 12, "bold"), padx=10, pady=8)
-        tbilisi_frame.pack(padx=20, pady=10, fill="x")
-        self.tbilisi_label = tk.Label(tbilisi_frame, text="Tbilisi: Loading...", font=("Courier", 13, "bold"))
-        self.tbilisi_label.pack()
+        tb_frame = tk.LabelFrame(root, text=" Georgia ", font=("Arial", 12, "bold"), fg="#f85149", bg="#161b22")
+        tb_frame.pack(padx=20, pady=15, fill="x")
+        self.tbilisi_time = tk.Label(tb_frame, text="--:--", fg="#ff6b6b", bg="#161b22", font=("Consolas", 26, "bold"))
+        self.tbilisi_time.pack(side="left", padx=40)
+        tk.Label(tb_frame, text="+04", fg="#ffaaf0", bg="#161b22", font=("Consolas", 18)).pack(side="left")
 
-        # Search + buttons
-        control_frame = tk.Frame(root, bg="#f0f0f0")
-        control_frame.pack(pady=15)
-        tk.Label(control_frame, text="Search any city:", bg="#f0f0f0", font=("Arial", 10)).pack(side="left")
-        self.city_entry = tk.Entry(control_frame, width=22, font=("Arial", 10))
-        self.city_entry.pack(side="left", padx=8)
-        self.city_entry.bind("<Return>", lambda e: self.search_city_time())
-        # Optional: block typing digits in real-time
-        self.city_entry.bind("<KeyRelease>", self.filter_input)
+        # Search
+        search_frame = tk.Frame(root, bg="#0d1117")
+        search_frame.pack(pady=35)
+        tk.Label(search_frame, text="City or ZIP:", fg="#ffffff", bg="#0d1117", font=("Arial", 13)).pack(side="left")
+        self.entry = tk.Entry(search_frame, width=30, font=("Arial", 13), bg="#21262d", fg="white", insertbackground="white")
+        self.entry.pack(side="left", padx=12)
+        self.entry.bind("<Return>", lambda e: self.search())
+        tk.Button(search_frame, text="Search", bg="#238636", fg="white", font=("Arial", 12, "bold"), command=self.search).pack(side="left", padx=8)
 
-        tk.Button(control_frame, text="Search", bg="#2196F3", fg="white", command=self.search_city_time).pack(side="left", padx=5)
-        tk.Button(control_frame, text="Refresh Now", bg="#4CAF50", fg="white", font=("Arial", 10, "bold"), command=self.manual_refresh).pack(side="left", padx=12)
+        # Result – empty at start
+        self.result = tk.Label(root, text="", font=("Consolas", 16, "bold"), fg="#a5d6ff", bg="#0d1117")
+        self.result.pack(pady=30)
 
-        self.result_label = tk.Label(root, text="", font=("Arial", 12, "bold"), fg="#d35400", bg="#f0f0f0")
-        self.result_label.pack(pady=12)
+        self.update_clocks()
+        self.root.after(1000, self.auto_update)
 
-        self.update_times()
-        self.root.after(60000, self.update_times)
+    def auto_update(self):
+        self.update_clocks()
+        self.root.after(1000, self.auto_update)
 
-    # =============================================================================
-    # NEW: Block numbers while typing (optional but nice)
-    # =============================================================================
-    def filter_input(self, event=None):
-        current = self.city_entry.get()
-        cleaned = re.sub(r"[^A-Za-z\s\-]", "", current)  # remove anything not letter/space/-
-        if cleaned != current:
-            self.city_entry.delete(0, tk.END)
-            self.city_entry.insert(0, cleaned)
-
-    # =============================================================================
-    def search_city_time(self):
-        city = self.city_entry.get().strip()
-        if not city:
-            messagebox.showwarning("Empty field", "Please type a city name")
-            return
-
-        if not validate_city_name(city):
-            self.result_label.config(text="", fg="red")
-            messagebox.showwarning("Invalid input", "City name cannot contain numbers or symbols")
-            return
-
-        tz_str = get_city_timezone(city)
-        if tz_str:
-            time_str = get_current_time(tz_str)
-            friendly = get_friendly_tz_name(tz_str)
-            self.result_label.config(text=f"{city.title()}:  {time_str}  →  {friendly}", fg="#006400")
-        else:
-            self.result_label.config(text="", fg="red")
-            messagebox.showerror("Not found", "There is no such city")
-
-    def manual_refresh(self):
-        self.update_times()
-        if self.city_entry.get().strip() and validate_city_name(self.city_entry.get()):
-            self.search_city_time()
-
-    def update_times(self):
+    def update_clocks(self):
         for name, tz in US_TIMEZONES.items():
-            self.usa_labels[name].config(text=get_current_time(tz))
-        self.tbilisi_label.config(text=f"Tbilisi: {get_current_time(TBILISI_TZ)}")
-        self.root.after(60000, self.update_times)
+            t = get_current_time(tz)
+            n = get_real_tz_name(tz)
+            self.us_labels[name][0].config(text=t)
+            self.us_labels[name][1].config(text=n)
+        self.tbilisi_time.config(text=get_current_time(TBILISI_TZ))
 
-# =============================================================================
+    def search(self):
+        query = self.entry.get().strip()
+        if not query:
+            self.result.config(text="")
+            return
+
+        res = smart_search(query)
+        if not res:
+            self.result.config(text="Not found", fg="#ff6b6b")
+            return
+
+        kind = res[0]
+        if kind == "zip":
+            city_state, zip_code = res[1], res[2]
+            loc = geolocator.geocode(city_state, timeout=12)
+            if loc:
+                tz = tf.timezone_at(lng=loc.longitude, lat=loc.latitude)
+                self.result.config(text=f"{city_state} ({zip_code}):  {get_current_time(tz)}  -  {get_real_tz_name(tz)}", fg="#a5d6ff")
+            else:
+                self.result.config(text="Location error", fg="#ffa657")
+        else:  # city
+            city_name, tz = res[1], res[2]
+            self.result.config(text=f"{city_name}:  {get_current_time(tz)}  -  {get_real_tz_name(tz)}", fg="#a5d6ff")
+
 if __name__ == "__main__":
     root = tk.Tk()
-    app = TimeZoneApp(root)
+    app = App(root)
     root.mainloop()
